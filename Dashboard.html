@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html>
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+  // Apply the saved theme before the page paints (white by default)
+  try { document.documentElement.dataset.theme = localStorage.getItem('am-theme') || 'light'; }
+  catch (e) { document.documentElement.dataset.theme = 'light'; }
+</script>
+<style>
+  /* Light theme (default). --cyan/--green/… are the accent names used everywhere; on white they are darker shades. */
+  :root {
+    --bg: #f4f6fa; --panel: #ffffff; --panel2: #eef1f6; --line: #dde2ea; --hover: #f3f6fb;
+    --text: #1f2430; --muted: #5f6b7a; --on-accent: #ffffff; --overlay: rgba(15, 23, 42, .45);
+    --cyan: #0b6bcb; --green: #1a7f37; --yellow: #b35c00; --pink: #c2185b; --red: #c62828;
+  }
+  :root[data-theme="dark"] {
+    --bg: #0b0d14; --panel: #131725; --panel2: #1a1f30; --line: #262c42; --hover: #161b2b;
+    --text: #e3e6f3; --muted: #8a90a8; --on-accent: #001; --overlay: rgba(0, 0, 0, .6);
+    --cyan: #00e5ff; --green: #39ff88; --yellow: #ffd23b; --pink: #ff3fae; --red: #ff5a5a;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 "Segoe UI", Roboto, sans-serif; }
+  header { display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 18px; margin: 0; color: var(--cyan); }
+  header .muted { margin-left: auto; }
+  .muted { color: var(--muted); font-size: 12px; }
+  button { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px; cursor: pointer; font: inherit; }
+  button:hover { border-color: var(--cyan); }
+  button.primary { background: var(--cyan); color: var(--on-accent); border-color: var(--cyan); font-weight: 600; }
+  button.sm { padding: 3px 8px; font-size: 12px; }
+  nav { display: flex; gap: 4px; padding: 10px 20px 0; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  nav button { border: none; border-bottom: 2px solid transparent; border-radius: 0; background: none; color: var(--muted); }
+  nav button.active { color: var(--cyan); border-bottom-color: var(--cyan); }
+  main { padding: 18px 20px; }
+  .tab { display: none; } .tab.active { display: block; }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 18px; }
+  .kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+  .kpi .v { font-size: 28px; font-weight: 700; }
+  .kpi .l { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 14px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+  .card h3 { margin: 0 0 10px; font-size: 14px; }
+  .chartbox { position: relative; height: 260px; }
+  .filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  input, select, textarea { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; font: inherit; }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--cyan); }
+  .tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { background: var(--panel2); color: var(--muted); font-size: 12px; font-weight: 600; position: sticky; top: 0; }
+  tr:hover td { background: var(--hover); }
+  tr.arow { cursor: pointer; }
+  tr.detail td { white-space: pre-wrap; background: var(--panel2); color: var(--text); padding: 10px 14px 12px 32px; }
+  .caret { color: var(--muted); display: inline-block; width: 14px; }
+  .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; border: 1px solid; }
+  .s-inuse { color: var(--cyan); border-color: var(--cyan); }
+  .s-instock { color: var(--green); border-color: var(--green); }
+  .s-repair { color: var(--yellow); border-color: var(--yellow); }
+  .s-pending { color: var(--pink); border-color: var(--pink); }
+  .s-lost, .s-retired { color: var(--red); border-color: var(--red); }
+  .alert { margin-bottom: 14px; }
+  .alert h3 span { color: var(--muted); font-weight: 400; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; font-size: 12px; }
+  .empty { color: var(--muted); font-style: italic; }
+  .staffinfo { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; margin: 12px 0; }
+  #modal { position: fixed; inset: 0; background: var(--overlay); display: none; align-items: center; justify-content: center; z-index: 10; }
+  #modal .box { background: var(--panel); border: 1px solid var(--cyan); border-radius: 12px; padding: 20px; width: min(420px, 92vw); max-height: 90vh; overflow: auto; }
+  #modal label { display: block; margin: 10px 0 4px; color: var(--muted); font-size: 12px; }
+  #modal input, #modal select, #modal textarea { width: 100%; }
+  #modal .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  #modal .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+  #toast { position: fixed; bottom: 18px; right: 18px; background: var(--panel2); border: 1px solid var(--cyan); padding: 10px 14px; border-radius: 8px; display: none; z-index: 20; }
+  #toast.err { border-color: var(--red); color: var(--red); }
+  #loading { padding: 40px; text-align: center; color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>🗂 Asset Manager</h1>
+  <button onclick="load()">↻ Refresh</button>
+  <button id="fsBtn" onclick="toggleFullscreen()">⛶ Full screen</button>
+  <button id="themeBtn" onclick="toggleTheme()">🌙 Dark</button>
+  <span class="muted" id="updated"></span>
+</header>
+<nav id="tabs">
+  <button data-tab="overview" class="active">Overview</button>
+  <button data-tab="assets">Assets</button>
+  <button data-tab="staff">Staff</button>
+  <button data-tab="alerts">Alerts <span id="alertCount"></span></button>
+  <button data-tab="history">History</button>
+</nav>
+<main>
+  <div id="loading">Loading data…</div>
+
+  <section id="overview" class="tab active">
+    <div class="kpis" id="kpis"></div>
+    <div class="grid2">
+      <div class="card"><h3>Assets by type</h3><div class="chartbox"><canvas id="chartType"></canvas></div></div>
+      <div class="card"><h3>Devices in use by department</h3><div class="chartbox"><canvas id="chartDept"></canvas></div></div>
+      <div class="card"><h3>Condition</h3><div class="chartbox"><canvas id="chartCond"></canvas></div></div>
+      <div class="card"><h3>Recent activity</h3><div id="recent"></div></div>
+    </div>
+  </section>
+
+  <section id="assets" class="tab">
+    <div class="filters">
+      <input id="fSearch" placeholder="Search ID, holder, model, serial…" style="flex:1;min-width:220px">
+      <select id="fType"><option value="">All types</option></select>
+      <select id="fStatus"><option value="">All statuses</option></select>
+      <select id="fDept"><option value="">All departments</option></select>
+      <button class="primary" onclick="openAddAsset()">+ Add device</button>
+    </div>
+    <div class="muted" id="assetCount" style="margin-bottom:8px"></div>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Asset ID</th><th>Type</th><th>Brand / Model</th><th>Serial</th><th>Holder</th><th>Department</th><th>Status</th><th>Condition</th><th>Purchased</th><th>Actions</th></tr></thead>
+      <tbody id="assetRows"></tbody>
+    </table></div>
+  </section>
+
+  <section id="staff" class="tab">
+    <div class="filters">
+      <select id="staffPick" style="min-width:260px"><option value="">Select a staff member…</option></select>
+      <button class="primary" onclick="openAddStaff()">+ Add staff</button>
+    </div>
+    <div id="staffDetail" class="empty">Pick someone to see the devices they hold. Use this as the offboarding checklist when a person leaves.</div>
+  </section>
+
+  <section id="alerts" class="tab"><div id="alertList"></div></section>
+
+  <section id="history" class="tab">
+    <div class="tablewrap"><table>
+      <thead><tr><th>Time</th><th>Asset</th><th>Action</th><th>From</th><th>To</th><th>Condition</th><th>By</th><th>Note</th></tr></thead>
+      <tbody id="historyRows"></tbody>
+    </table></div>
+  </section>
+</main>
+
+<div id="modal"><div class="box" id="modalBox"></div></div>
+<div id="toast"></div>
+
+<script>
+let DATA = null;
+const charts = {};
+const expanded = new Set(); // asset IDs whose description row is open
+// Chart palettes per theme: bright on dark, deeper shades on white
+const PALETTE = {
+  light: ['#0b6bcb', '#1a7f37', '#c2185b', '#d98e04', '#6f42c1', '#e8590c', '#0e8a9e', '#c62828'],
+  dark: ['#00e5ff', '#39ff88', '#ff3fae', '#ffd23b', '#a78bfa', '#ff8a3d', '#5ac8fa', '#ff5a5a']
+};
+const theme = () => document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light';
+const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+function toggleTheme() {
+  const t = theme() === 'dark' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = t;
+  try { localStorage.setItem('am-theme', t); } catch (e) {}
+  showThemeBtn();
+  if (DATA) renderCharts(); // charts draw on canvas, so redraw them in the new colours
+}
+function showThemeBtn() { $('themeBtn').textContent = theme() === 'dark' ? '☀ Light' : '🌙 Dark'; }
+
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const $ = id => document.getElementById(id);
+const pill = s => `<span class="pill s-${s.toLowerCase().replace(/\s/g, '')}">${esc(s)}</span>`;
+
+/* ---------- tabs ---------- */
+document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('active', x === b));
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.id === b.dataset.tab));
+});
+
+/* ---------- load ---------- */
+function toggleFullscreen() {
+  if (document.fullscreenElement) return document.exitFullscreen();
+  const el = document.documentElement;
+  const p = el.requestFullscreen ? el.requestFullscreen() : Promise.reject();
+  p.catch(() => toast('Full screen is blocked here. Use menu → "Open dashboard in new tab", then press F11.', true));
+}
+document.addEventListener('fullscreenchange', () => {
+  $('fsBtn').textContent = document.fullscreenElement ? '⛶ Exit full screen' : '⛶ Full screen';
+});
+
+function load() {
+  $('updated').textContent = 'Loading…';
+  google.script.run.withSuccessHandler(render).withFailureHandler(fail).getDashboardData();
+}
+function fail(e) { toast(e.message || e, true); $('updated').textContent = ''; }
+function toast(msg, err) {
+  const t = $('toast'); t.textContent = msg; t.className = err ? 'err' : ''; t.style.display = 'block';
+  clearTimeout(t._h); t._h = setTimeout(() => t.style.display = 'none', 4000);
+}
+
+function render(d) {
+  DATA = d;
+  $('loading').style.display = 'none';
+  $('updated').textContent = 'Updated ' + d.updated;
+  renderKpis(); renderCharts(); renderRecent(); fillFilters(); renderAssets(); fillStaffPick(); renderStaff(); renderAlerts(); renderHistory();
+}
+
+/* ---------- overview ---------- */
+function renderKpis() {
+  const k = DATA.kpis;
+  const items = [['Total assets', k.total, 'var(--text)'], ['In use', k.inUse, 'var(--cyan)'], ['Available', k.inStock, 'var(--green)'],
+                 ['Pending check', k.pending, 'var(--pink)'], ['In repair', k.repair, 'var(--yellow)'],
+                 ['Lost / damaged', k.lostDamaged, 'var(--red)'], ['Staff', k.staff, 'var(--muted)']];
+  $('kpis').innerHTML = items.map(([l, v, c]) => `<div class="kpi"><div class="v" style="color:${c}">${v}</div><div class="l">${l}</div></div>`).join('');
+}
+
+function makeChart(id, cfg) {
+  if (charts[id]) charts[id].destroy();
+  Chart.defaults.color = cssVar('--muted'); Chart.defaults.borderColor = cssVar('--line');
+  charts[id] = new Chart($(id), cfg);
+}
+function renderCharts() {
+  const t = DATA.byType;
+  makeChart('chartType', { type: 'bar', data: { labels: t.map(x => x.type), datasets: [
+      { label: 'In use', data: t.map(x => x.inUse), backgroundColor: cssVar('--cyan') },
+      { label: 'Available', data: t.map(x => x.inStock), backgroundColor: cssVar('--green') },
+      { label: 'Other', data: t.map(x => x.other), backgroundColor: PALETTE[theme()][3] }] },
+    options: { maintainAspectRatio: false, scales: { x: { stacked: true }, y: { stacked: true, ticks: { precision: 0 } } } } });
+  const dept = DATA.byDept;
+  makeChart('chartDept', { type: 'doughnut', data: { labels: Object.keys(dept), datasets: [{ data: Object.values(dept), backgroundColor: PALETTE[theme()], borderWidth: 0 }] },
+    options: { maintainAspectRatio: false, plugins: { legend: { position: 'right' } } } });
+  const cond = DATA.byCondition;
+  makeChart('chartCond', { type: 'bar', data: { labels: Object.keys(cond), datasets: [{ label: 'Assets', data: Object.values(cond), backgroundColor: PALETTE[theme()] }] },
+    options: { maintainAspectRatio: false, indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { ticks: { precision: 0 } } } } });
+}
+function renderRecent() {
+  const h = DATA.history.slice(0, 8);
+  $('recent').innerHTML = h.length ? h.map(r => `<div style="padding:5px 0;border-bottom:1px solid var(--line)">
+      <b>${esc(r.id)}</b> · ${esc(r.action)} ${r.to ? '→ ' + esc(r.to) : ''}<div class="muted">${esc(r.time)} ${r.note ? '· ' + esc(r.note) : ''}</div></div>`).join('')
+    : '<div class="empty">No activity yet. Assign or return an asset to start the log.</div>';
+}
+
+/* ---------- assets ---------- */
+function fillFilters() {
+  const opt = (sel, vals, first) => { const cur = sel.value; sel.innerHTML = `<option value="">${first}</option>` + vals.map(v => `<option>${esc(v)}</option>`).join(''); sel.value = cur; };
+  const uniq = arr => [...new Set(arr.filter(Boolean))].sort();
+  opt($('fType'), uniq(DATA.assets.map(a => a.type)), 'All types');
+  opt($('fStatus'), DATA.statuses, 'All statuses');
+  opt($('fDept'), uniq(DATA.assets.map(a => a.dept)), 'All departments');
+}
+['fSearch', 'fType', 'fStatus', 'fDept'].forEach(id => $(id).addEventListener('input', renderAssets));
+$('assetRows').addEventListener('click', e => {
+  if (e.target.closest('button')) return; // action buttons keep their own behaviour
+  const tr = e.target.closest('tr.arow'); if (!tr) return;
+  const id = tr.dataset.id;
+  expanded.has(id) ? expanded.delete(id) : expanded.add(id);
+  renderAssets();
+});
+
+function renderAssets() {
+  const q = $('fSearch').value.toLowerCase(), ty = $('fType').value, st = $('fStatus').value, dp = $('fDept').value;
+  const list = DATA.assets.filter(a =>
+    (!ty || a.type === ty) && (!st || a.status === st) && (!dp || a.dept === dp) &&
+    (!q || [a.id, a.user, a.model, a.serial, a.description, a.previousHolder].join(' ').toLowerCase().includes(q)));
+  $('assetCount').textContent = `${list.length} of ${DATA.assets.length} assets`;
+  $('assetRows').innerHTML = list.map(a => `<tr class="arow" data-id="${esc(a.id)}">
+    <td><span class="caret">${expanded.has(a.id) ? '▾' : '▸'}</span><b>${esc(a.id)}</b></td><td>${esc(a.type)}</td><td>${esc(a.model)}</td><td>${esc(a.serial)}</td>
+    <td>${esc(a.user) || '<span class="muted">—</span>'}</td><td>${esc(a.dept)}</td><td>${pill(a.status)}</td>
+    <td>${esc(a.condition)}</td><td>${esc(a.purchaseDate)}</td>
+    <td>${a.user ? `<button class="sm" onclick="openReturn('${esc(a.id)}')">Return</button> <button class="sm" onclick="openAssign('${esc(a.id)}')">Reassign</button>`
+                 : `<button class="sm" onclick="openAssign('${esc(a.id)}')">Assign</button>`}
+        <button class="sm" onclick="openStatus('${esc(a.id)}')">Status</button></td></tr>` +
+    (expanded.has(a.id) ? `<tr class="detail"><td colspan="10"><div style="margin-bottom:6px"><span class="muted">Previous holders:</span> ${
+        a.previousHolders.length ? `<span style="color:var(--cyan);font-weight:600">${esc(a.previousHolders.join(' → '))}</span>` : '<span class="muted">none</span>'}</div>${
+        esc(a.description) || '<span class="empty">No description.</span>'}</td></tr>` : '')).join('')
+    || '<tr><td colspan="10" class="empty">No assets match.</td></tr>';
+}
+
+/* ---------- staff ---------- */
+function fillStaffPick() {
+  const sel = $('staffPick'), cur = sel.value;
+  sel.innerHTML = '<option value="">Select a staff member…</option>' +
+    DATA.staff.map(s => `<option value="${esc(s.name)}">${esc(s.name)} — ${esc(s.dept)}</option>`).join('');
+  sel.value = cur;
+}
+$('staffPick').addEventListener('change', renderStaff);
+function renderStaff() {
+  const name = $('staffPick').value;
+  if (!name) return;
+  const s = DATA.staff.find(x => x.name === name);
+  const held = DATA.assets.filter(a => a.user === name);
+  const past = DATA.history.filter(h => h.from === name || h.to === name);
+  const usedBefore = DATA.assets.filter(a => a.user !== name && a.previousHolders.some(p => p.toLowerCase() === name.toLowerCase()));
+  $('staffDetail').className = '';
+  $('staffDetail').innerHTML = `
+    <div class="staffinfo">
+      <div class="card"><div class="muted">Position</div>${esc(s.position)}</div>
+      <div class="card"><div class="muted">Department</div>${esc(s.dept)}</div>
+      <div class="card"><div class="muted">Email</div>${esc(s.email)}</div>
+      <div class="card"><div class="muted">Contact</div>${esc(s.contact)}</div>
+    </div>
+    <div class="card" style="margin-bottom:14px">
+      <h3>Holding ${held.length} device${held.length === 1 ? '' : 's'}</h3>
+      ${held.length ? `<div class="tablewrap"><table><thead><tr><th>Asset ID</th><th>Type</th><th>Model</th><th>Condition</th><th></th></tr></thead><tbody>
+        ${held.map(a => `<tr><td><b>${esc(a.id)}</b></td><td>${esc(a.type)}</td><td>${esc(a.model)}</td><td>${esc(a.condition)}</td>
+          <td><button class="sm" onclick="openReturn('${esc(a.id)}')">Return</button></td></tr>`).join('')}</tbody></table></div>`
+        : '<div class="empty">No devices assigned.</div>'}
+      <div style="margin-top:10px"><button class="primary" onclick="openAssignTo('${esc(name)}')">+ Give a device</button></div>
+    </div>
+    <div class="card" style="margin-bottom:14px"><h3>Used before · ${usedBefore.length}</h3>${usedBefore.length
+      ? `<div class="chips">${usedBefore.map(a => `<span class="chip" title="${esc(a.type)} ${esc(a.model)}">${esc(a.id)} · ${esc(a.type)}${a.user ? ' · now with ' + esc(a.user) : ' · ' + esc(a.status)}</span>`).join('')}</div>`
+      : '<div class="empty">No earlier devices recorded.</div>'}</div>
+    <div class="card"><h3>History</h3>${past.length ? past.map(h => `<div class="muted">${esc(h.time)} · ${esc(h.id)} · ${esc(h.action)} ${esc(h.note)}</div>`).join('') : '<div class="empty">No recorded moves yet.</div>'}</div>`;
+}
+
+/* ---------- alerts ---------- */
+function renderAlerts() {
+  const A = DATA.alerts;
+  const groups = [
+    ['Available to assign', 'In stock and free for new staff', A.available, 'var(--green)'],
+    ['Holder not in Staffs', 'Name typo or person no longer on the staff list', A.unknownHolder, 'var(--red)'],
+    ['Status conflict', 'Status says in use with no holder, or in stock with a holder', A.statusConflict, 'var(--yellow)'],
+    ['Pending check', 'Returned by staff — check it, then set Status to "In stock" to move it to the stock area', A.pending, 'var(--pink)'],
+    ['In repair', 'Follow up with the repair shop', A.repair, 'var(--yellow)'],
+    [`Older than ${DATA.oldYears} years`, 'Plan replacement', A.old, 'var(--pink)'],
+    ['Missing info', 'No purchase date, condition or serial number', A.missingInfo, 'var(--muted)']];
+  const urgent = A.unknownHolder.length + A.statusConflict.length;
+  $('alertCount').textContent = urgent ? `(${urgent})` : '';
+  $('alertList').innerHTML = groups.map(([t, sub, list, c]) => `<div class="card alert">
+      <h3 style="color:${c}">${t} · ${list.length} <span>— ${sub}</span></h3>
+      ${list.length ? `<div class="chips">${list.map(a => `<span class="chip" title="${esc(a.model)}">${esc(a.id)}${a.user ? ' · ' + esc(a.user) : ''}</span>`).join('')}</div>` : '<div class="empty">All clear.</div>'}
+    </div>`).join('');
+}
+
+/* ---------- history ---------- */
+function renderHistory() {
+  $('historyRows').innerHTML = DATA.history.map(h => `<tr><td>${esc(h.time)}</td><td><b>${esc(h.id)}</b></td><td>${esc(h.action)}</td>
+    <td>${esc(h.from)}</td><td>${esc(h.to)}</td><td>${esc(h.condition)}</td><td>${esc(h.by)}</td><td>${esc(h.note)}</td></tr>`).join('')
+    || '<tr><td colspan="8" class="empty">No history yet.</td></tr>';
+}
+
+/* ---------- modals & actions ---------- */
+function modal(html) { $('modalBox').innerHTML = html; $('modal').style.display = 'flex'; }
+function closeModal() { $('modal').style.display = 'none'; }
+$('modal').addEventListener('click', e => { if (e.target.id === 'modal') closeModal(); });
+
+function run(fnName, args, okMsg, after) {
+  const btn = document.querySelector('#modal .primary'); if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  google.script.run
+    .withSuccessHandler(d => { closeModal(); render(d); toast(okMsg); if (after) after(); syncStaffsLater(); })
+    .withFailureHandler(e => { if (btn) { btn.disabled = false; btn.textContent = 'Save'; } toast(e.message || e, true); })[fnName](...args);
+}
+
+// Staffs ID columns are updated after the dashboard has shown the result, so saving feels quicker
+function syncStaffsLater() {
+  google.script.run.withFailureHandler(e => toast('Staffs sheet not updated: ' + (e.message || e), true)).syncStaffsQuiet();
+}
+
+function staffOptions(selected) {
+  return DATA.staff.map(s => `<option value="${esc(s.name)}" ${s.name === selected ? 'selected' : ''}>${esc(s.name)} — ${esc(s.dept)}</option>`).join('');
+}
+function openAssign(id) {
+  const a = DATA.assets.find(x => x.id === id);
+  modal(`<h3>${a.user ? 'Reassign' : 'Assign'} ${esc(id)}</h3><div class="muted">${esc(a.type)} · ${esc(a.model)}${a.user ? ' · currently with ' + esc(a.user) : ''}</div>
+    <label>Give to</label><select id="mStaff">${staffOptions()}</select>
+    <label>Note</label><textarea id="mNote" rows="2" placeholder="e.g. new hire, replacement"></textarea>
+    <div class="actions"><button onclick="closeModal()">Cancel</button>
+    <button class="primary" onclick="run('assignAsset',['${esc(id)}',$('mStaff').value,$('mNote').value],'${esc(id)} assigned')">Save</button></div>`);
+}
+function openAssignTo(name) {
+  const free = DATA.assets.filter(a => a.status === 'In stock');
+  if (!free.length) return toast('No available devices in stock.', true);
+  modal(`<h3>Give a device to ${esc(name)}</h3>
+    <label>Available device</label><select id="mAsset">${free.map(a => `<option value="${esc(a.id)}">${esc(a.id)} — ${esc(a.type)} ${esc(a.model)}</option>`).join('')}</select>
+    <label>Note</label><textarea id="mNote" rows="2"></textarea>
+    <div class="actions"><button onclick="closeModal()">Cancel</button>
+    <button class="primary" onclick="run('assignAsset',[$('mAsset').value,'${esc(name)}',$('mNote').value],'Device assigned')">Save</button></div>`);
+}
+function openReturn(id) {
+  const a = DATA.assets.find(x => x.id === id);
+  modal(`<h3>Return ${esc(id)}</h3><div class="muted">From ${esc(a.user)} · ${esc(a.type)} ${esc(a.model)}</div>
+    <label>Condition on return</label><select id="mCond">${DATA.conditions.map(c => `<option ${c === a.condition ? 'selected' : ''}>${c}</option>`).join('')}</select>
+    <div class="muted" style="margin-top:4px">Damaged items go to Repair; others become Pending until you check them and set Status to In stock.</div>
+    <label>Note</label><textarea id="mNote" rows="2" placeholder="e.g. resigned, upgraded"></textarea>
+    <div class="actions"><button onclick="closeModal()">Cancel</button>
+    <button class="primary" onclick="run('returnAsset',['${esc(id)}',$('mCond').value,$('mNote').value],'${esc(id)} returned')">Save</button></div>`);
+}
+function openStatus(id) {
+  const a = DATA.assets.find(x => x.id === id);
+  modal(`<h3>Change status of ${esc(id)}</h3><div class="muted">Now: ${esc(a.status)}</div>
+    <label>New status</label><select id="mStatus">${DATA.statuses.map(s => `<option ${s === a.status ? 'selected' : ''}>${s}</option>`).join('')}</select>
+    <label>Note</label><textarea id="mNote" rows="2" placeholder="e.g. sent to repair shop, screen broken"></textarea>
+    <div class="actions"><button onclick="closeModal()">Cancel</button>
+    <button class="primary" onclick="run('setAssetStatus',['${esc(id)}',$('mStatus').value,$('mNote').value],'Status updated')">Save</button></div>`);
+}
+
+/* ---------- add device / staff ---------- */
+const uniqSorted = arr => [...new Set(arr.filter(Boolean))].sort();
+
+/** Next free ID for a type, following the most common pattern of that type (LAP-0001 → LAP-0002). */
+function nextAssetId(type) {
+  const T = type.trim().toUpperCase(); if (!T) return '';
+  const seen = {};
+  DATA.assets.filter(a => a.type === T).forEach(a => {
+    const m = a.id.match(/^(.*?)(\d+)$/); if (!m) return;
+    const p = seen[m[1]] = seen[m[1]] || { prefix: m[1], count: 0, max: 0, width: 0 };
+    p.count++; p.max = Math.max(p.max, +m[2]); p.width = Math.max(p.width, m[2].length);
+  });
+  const p = Object.values(seen).sort((x, y) => y.count - x.count)[0]
+    || { prefix: T.replace(/[^A-Z0-9]/g, '').slice(0, 3) + '-', max: 0, width: 4 };
+  const taken = new Set(DATA.assets.map(a => a.id.toLowerCase()));
+  let n = p.max, id;
+  do { id = p.prefix + String(++n).padStart(p.width, '0'); } while (taken.has(id.toLowerCase()));
+  return id;
+}
+function suggestId() { if ($('mId').dataset.auto) $('mId').value = nextAssetId($('mType').value); }
+
+function openAddAsset() {
+  modal(`<h3>Add device</h3>
+    <div class="row2">
+      <div><label>Asset type</label><input id="mType" list="mTypes" placeholder="e.g. LAPTOP" oninput="suggestId()">
+        <datalist id="mTypes">${uniqSorted(DATA.assets.map(a => a.type)).map(t => `<option value="${esc(t)}">`).join('')}</datalist></div>
+      <div><label>Asset ID</label><input id="mId" data-auto="1" oninput="delete this.dataset.auto"></div>
+    </div>
+    <label>Brand / Model</label><input id="mModel" placeholder="e.g. ASUS">
+    <label>Serial number</label><input id="mSerial">
+    <label>Description</label><textarea id="mDesc" rows="5" placeholder="CPU, RAM, storage, screen, OS…"></textarea>
+    <div class="row2">
+      <div><label>Purchase date</label><input id="mDate" type="date"></div>
+      <div><label>Condition</label><select id="mCond">${DATA.conditions.map(c => `<option ${c === 'New' ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select></div>
+    </div>
+    <label>Holder</label><select id="mStaff"><option value="">— In stock —</option>${staffOptions()}</select>
+    <label>Remarks</label><input id="mRemarks">
+    <div class="actions"><button onclick="closeModal()">Cancel</button><button class="primary" onclick="saveAsset()">Save</button></div>`);
+  $('mType').focus();
+}
+function saveAsset() {
+  const f = { type: $('mType').value, id: $('mId').value, model: $('mModel').value, serial: $('mSerial').value, description: $('mDesc').value,
+              purchaseDate: $('mDate').value, condition: $('mCond').value, user: $('mStaff').value, remarks: $('mRemarks').value };
+  if (!f.type.trim() || !f.id.trim()) return toast('Asset type and Asset ID are required.', true);
+  run('addAsset', [f], f.id.trim() + ' added');
+}
+
+function openAddStaff() {
+  modal(`<h3>Add staff</h3>
+    <label>Name</label><input id="mName">
+    <label>Department</label><input id="mDept" list="mDepts" placeholder="Pick or type a new one">
+      <datalist id="mDepts">${uniqSorted(DATA.staff.map(s => s.dept)).map(d => `<option value="${esc(d)}">`).join('')}</datalist>
+    <label>Position</label><input id="mPos">
+    <div class="row2">
+      <div><label>Email</label><input id="mEmail" type="email"></div>
+      <div><label>Contact</label><input id="mContact"></div>
+    </div>
+    <div class="muted" style="margin-top:6px">Fill at least one of position, email or contact.</div>
+    <div class="actions"><button onclick="closeModal()">Cancel</button><button class="primary" onclick="saveStaff()">Save</button></div>`);
+  $('mName').focus();
+}
+function saveStaff() {
+  const f = { name: $('mName').value.trim(), dept: $('mDept').value, position: $('mPos').value, email: $('mEmail').value, contact: $('mContact').value };
+  if (!f.name || !f.dept.trim()) return toast('Name and department are required.', true);
+  if (![f.position, f.email, f.contact].some(v => v.trim())) return toast('Fill at least one of position, email or contact.', true);
+  run('addStaff', [f], f.name + ' added', () => { $('staffPick').value = f.name; renderStaff(); });
+}
+
+showThemeBtn();
+load();
+</script>
+</body>
+</html>
